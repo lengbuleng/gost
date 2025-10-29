@@ -1,0 +1,47 @@
+# Service 1: 外部流量入口 (443 端口)
+# 接收来自 PC C 的 TCP/TLS 流量，并转发到本地 8999 端口。
+services:
+  - name: external-in-443
+    addr: "0.0.0.0:443"
+    admission: srdcloud-whitelist
+    # 处理器配置：将接收到的流量转发到本地 8999 端口
+    handler:
+      type: http
+    forwarder:
+      nodes:
+        # 转发到本地的 8999 端口
+        - name: target-0
+          addr: 127.0.0.1:8999
+    # 监听器配置：接收外部 TLS 流量
+    listener:
+      type: tcp # 使用 TLS 协议监听，这样 gost 才能正确处理 C 的 HTTPS 连接
+      tls:
+        certFile: "/etc/gost/server.crt"
+        keyFile: "/etc/gost/server.key"
+
+  # Service 2: WSS 隧道入口 (8999 端口)
+  # 接收 Service 1 转发的流量，并将其通过 WSS 转发给云电脑 B。
+  - name: tunnel-entry-8999
+    addr: "0.0.0.0:8999"
+    # 处理器配置：将流量转发给所有连接到本服务的客户端 (云电脑 B)
+    handler:
+      type: http
+    # 监听器配置：用于 WSS 隧道的 TLS 握手
+    listener:
+      type: wss # WSS 协议
+      tls:
+        certFile: "/etc/gost/server.crt"
+        keyFile: "/etc/gost/server.key"
+    forwarder:
+      nodes:
+        # 使用 ":0" 作为目标地址，表示将流量转发给所有连接的客户端
+        - name: target-0
+          addr: ":0"
+
+# === Admission 规则定义 ===
+admissions:
+  - name: srdcloud-whitelist
+    whitelist: true # 设为 true 表示这是一个白名单
+    matchers:
+      # 匹配所有 srdcloud.cn 及其子域名
+      - .srdcloud.cn

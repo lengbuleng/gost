@@ -1,0 +1,48 @@
+# 定义转发链：连接到公网主机 A 的 8999 WSS 端口
+chains:
+  - name: srdcloud-chain
+    hops:
+      - name: srdcloud-hop
+        nodes:
+          - name: A-tunnel-node
+            # 连接目标是 公网主机 A 的 WSS 监听端口 8999
+            addr: "47.93.57.10:8999"
+
+            # 使用 WSS 协议连接
+            connector:
+              type: http
+            dialer:
+              type: wss
+              tls:
+                # 假设证书路径在 C:\gost\
+                caFile: "E:/code/gost/bin/server.crt"
+                secure: true # 允许自签名证书
+
+# 定义服务：接收隧道流量，并根据域名限制转发
+services:
+  - name: srdcloud-forwarder
+    # 客户端服务，隐式接收来自 chain 的流量
+    addr: ":0"
+
+    handler:
+      type: forward
+      chain: srdcloud-chain
+
+      # *** 关键修改：引用 hosts-0 规则进行通配符匹配 ***
+      hosts: hosts-0
+
+    # 转发器配置：流量的最终目标是内网网站 (端口 443)
+    forwarder:
+      nodes:
+        # 转发到内网的 www.srdcloud.cn:443
+        # 注意：这里的 remote 目标地址必须是具体的，但会接受所有匹配 hosts 规则的流量
+        - addr: www.srdcloud.cn:443
+
+# 额外的 hosts 映射（用于限制流量的通配符规则）
+hosts:
+  - name: hosts-0
+    # gost 的 hosts 匹配器会使用 SNI/目标地址进行匹配
+    mappings:
+      # 这里使用 .srdcloud.cn:443 匹配所有子域名的 443 端口流量
+      - ip: www.srdcloud.cn:443
+        hostname: .srdcloud.cn:443 # Gost 会匹配所有 *.srdcloud.cn:443 的流量
